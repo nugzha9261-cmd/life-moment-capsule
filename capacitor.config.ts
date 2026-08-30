@@ -10,6 +10,13 @@ const config: CapacitorConfig = {
     allowsLinkPreview: false,
     // Use bundled mode for App Store distribution — no hot-reload server
     scheme: 'reelive'
+  },
+  android: {
+    // Android-specific settings for camera and fullscreen experience
+    buildOptions: {
+      keystorePath: undefined,
+      keystoreAlias: undefined,
+    },
   }
 };
 
