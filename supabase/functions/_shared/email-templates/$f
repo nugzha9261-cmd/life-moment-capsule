@@ -1,0 +1,4 @@
+const fallback = { fontSize: '12px', color: '#705848', lineHeight: '1.5', margin: '25px 0 0', wordBreak: 'break-all' as const }
+const fallbackLink = { color: '#E87C40', textDecoration: 'underline' }
+const fallback = { fontSize: '12px', color: '#705848', lineHeight: '1.5', margin: '25px 0 0', wordBreak: 'break-all' as const }
+const fallbackLink = { color: '#E87C40', textDecoration: 'underline' }

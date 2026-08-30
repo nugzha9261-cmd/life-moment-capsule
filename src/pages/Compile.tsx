@@ -1,0 +1,361 @@
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, FileVideo, Trash2 } from 'lucide-react';
+import { MobileLayout } from '@/components/layout/MobileLayout';
+import { BottomNav } from '@/components/navigation/BottomNav';
+import { CompileFilters } from '@/components/compile/CompileFilters';
+import { MusicPicker, MusicTrack } from '@/components/compile/MusicPicker';
+import { SelectableClipThumbnail } from '@/components/compile/SelectableClipThumbnail';
+import { DurationCounter } from '@/components/compile/DurationCounter';
+import { CloudCompilationProgress } from '@/components/compile/CloudCompilationProgress';
+import { CompilationResultSheet } from '@/components/compile/CompilationResultSheet';
+import { useJourneys } from '@/hooks/useJourneys';
+import { useCompileClips, TagFilter } from '@/hooks/useCompileClips';
+import { useCloudCompilation } from '@/hooks/useCloudCompilation';
+import { useCompilations } from '@/hooks/useCompilations';
+import { useFreeTierLimits, FREE_JOURNEY_LIMIT, FREE_COMPILATION_LIMIT } from '@/hooks/useFreeTierLimits';
+import { Compilation } from '@/types/journey';
+import { toast } from 'sonner';
+
+const Compile: React.FC = () => {
+  const navigate = useNavigate();
+  const isCompilingRef = useRef(false);
+  const { journeys } = useJourneys();
+  const { canCreateCompilation, compilationCount, isPremium, refresh: refreshLimits } = useFreeTierLimits();
+  
+  // Filter state
+  const [selectedJourneyId, setSelectedJourneyId] = useState<string>('all');
+  const [tagFilter, setTagFilter] = useState<TagFilter>('all');
+  const [startDate, setStartDate] = useState<Date | undefined>();
+  const [endDate, setEndDate] = useState<Date | undefined>();
+  const [selectedMusic, setSelectedMusic] = useState<MusicTrack | null>(null);
+  const [showDate, setShowDate] = useState(true);
+
+  const {
+    clips,
+    loading,
+    selectedIds,
+    selectedClips,
+    totalDuration,
+    toggleSelection,
+  } = useCompileClips({
+    journeyId: selectedJourneyId === 'all' ? undefined : selectedJourneyId,
+    tagFilter,
+    startDate,
+    endDate,
+  });
+
+  // Cloud compilation
+  const { progress: cloudProgress, resultUrl: cloudResultUrl, submit: cloudSubmit, reset: cloudReset } = useCloudCompilation();
+  const { saveCompilationFromUrl, drafts, deleteCompilation, promoteDraft } = useCompilations();
+  
+  const [showResult, setShowResult] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+
+  // Show result sheet when cloud compilation completes
+  useEffect(() => {
+    if (cloudProgress.stage === 'completed' && cloudResultUrl) {
+      setShowResult(true);
+    }
+  }, [cloudProgress.stage, cloudResultUrl]);
+
+  const handleCompile = async () => {
+    if (selectedClips.length === 0) {
+      toast.error('Please select at least one clip');
+      return;
+    }
+
+    if (!canCreateCompilation) {
+      toast.error(`Free trial: ${FREE_COMPILATION_LIMIT} compilation limit. Upgrade for unlimited.`);
+      navigate('/paywall');
+      return;
+    }
+
+    const journeyName = selectedJourneyId !== 'all'
+      ? journeys.find(j => j.id === selectedJourneyId)?.name
+      : undefined;
+
+    const title = journeyName
+      ? `${journeyName} Compilation`
+      : `Compilation - ${new Date().toLocaleDateString()}`;
+
+    // Check if the selected journey has day numbers enabled
+    const selectedJourney = selectedJourneyId !== 'all'
+      ? journeys.find(j => j.id === selectedJourneyId)
+      : undefined;
+    const showDayNumbers = selectedJourney?.showDayNumbers ?? true;
+
+    await cloudSubmit({
+      clipUrls: selectedClips.map(c => c.uri),
+      clipDayNumbers: showDayNumbers ? selectedClips.map(c => c.dayNumber ?? null) : undefined,
+      clipDates: showDate ? selectedClips.map(c => c.capturedAt ?? null) : undefined,
+      title,
+      journeyId: selectedJourneyId !== 'all' ? selectedJourneyId : undefined,
+      duration: totalDuration,
+      clipCount: selectedClips.length,
+      soundtrackUrl: selectedMusic?.file_url,
+    });
+  };
+
+  const handleSaveToApp = async () => {
+    if (!cloudResultUrl) return;
+
+    setIsSaving(true);
+    try {
+      const journeyName = selectedJourneyId !== 'all'
+        ? journeys.find(j => j.id === selectedJourneyId)?.name
+        : undefined;
+
+      const title = journeyName
+        ? `${journeyName} Compilation`
+        : `Compilation - ${new Date().toLocaleDateString()}`;
+
+      const result = await saveCompilationFromUrl({
+        title,
+        videoUrl: cloudResultUrl,
+        duration: totalDuration,
+        clipCount: selectedClips.length,
+        clipIds: selectedClips.map(c => c.id),
+        journeyId: selectedJourneyId !== 'all' ? selectedJourneyId : undefined,
+        isDraft: false,
+      });
+
+      if (result) {
+        setIsSaved(true);
+        toast.success('Saved to your Reels!');
+        refreshLimits();
+        // For free users, after using their 1 compilation, show paywall
+        if (!isPremium) {
+          setTimeout(() => {
+            setShowResult(false);
+            cloudReset();
+            navigate('/paywall');
+          }, 1500);
+        }
+      } else {
+        toast.error('Failed to save. Please try again.');
+      }
+    } catch {
+      toast.error('Failed to save. Please try again.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCloseResult = () => {
+    setShowResult(false);
+    cloudReset();
+    setIsSaved(false);
+    if (isSaved) {
+      navigate('/reels');
+    }
+  };
+
+  const handleBack = () => {
+    if (isCompilingRef.current) {
+      cloudReset();
+    }
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/home');
+    }
+  };
+
+  const handleDeleteDraft = async (id: string) => {
+    const ok = await deleteCompilation(id);
+    if (ok) {
+      toast.success('Draft deleted');
+    } else {
+      toast.error('Failed to delete draft');
+    }
+  };
+
+  const handlePromoteDraft = async (draft: Compilation) => {
+    const ok = await promoteDraft(draft.id);
+    if (ok) {
+      toast.success('Moved to Reels!');
+    } else {
+      toast.error('Failed to save. Please try again.');
+    }
+  };
+
+  const isCompiling = cloudProgress.stage === 'submitting' || cloudProgress.stage === 'processing';
+  isCompilingRef.current = isCompiling;
+
+  return (
+    <>
+      <MobileLayout noPadding>
+        {/* Header */}
+        <div className="px-5 pt-12 pb-4 bg-card border-b border-border">
+          <div className="flex items-center gap-4 mb-4">
+            <button
+              onClick={handleBack}
+              className="w-10 h-10 rounded-full bg-muted flex items-center justify-center"
+            >
+              <ArrowLeft className="w-5 h-5 text-foreground" />
+            </button>
+            <div className="flex-1">
+              <h1 className="text-xl font-bold text-foreground">Create Compilation</h1>
+              <p className="text-sm text-muted-foreground">Select clips to include</p>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <CompileFilters
+            journeys={journeys}
+            selectedJourneyId={selectedJourneyId}
+            onJourneyChange={setSelectedJourneyId}
+            tagFilter={tagFilter}
+            onTagFilterChange={setTagFilter}
+            startDate={startDate}
+            endDate={endDate}
+            onStartDateChange={setStartDate}
+            onEndDateChange={setEndDate}
+          />
+
+          {!isPremium && (
+            <button
+              onClick={() => navigate('/paywall')}
+              className="mt-3 w-full text-xs text-left px-3 py-2 rounded-lg bg-primary/5 border border-primary/20 text-primary"
+            >
+              {compilationCount >= FREE_COMPILATION_LIMIT
+                ? `Free trial used (${compilationCount}/${FREE_COMPILATION_LIMIT}) · Tap to upgrade for unlimited`
+                : `Free trial: ${compilationCount}/${FREE_COMPILATION_LIMIT} compilation · Tap to upgrade`}
+            </button>
+          )}
+        </div>
+
+        {/* Music Picker */}
+        <MusicPicker selectedTrack={selectedMusic} onSelect={setSelectedMusic} />
+
+        {/* Date stamp toggle */}
+        <div className="px-5 pt-4">
+          <label className="flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-card border border-border">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-foreground">Show date on each clip</p>
+              <p className="text-xs text-muted-foreground">Small date stamp in the top-left (e.g. Jun 23, 2026)</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={showDate}
+              onChange={(e) => setShowDate(e.target.checked)}
+              className="w-5 h-5 accent-primary cursor-pointer"
+            />
+          </label>
+        </div>
+
+
+        {/* Drafts section */}
+        {drafts.length > 0 && (
+          <div className="px-5 pt-4 pb-2">
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+              Drafts ({drafts.length})
+            </h2>
+            <div className="flex gap-3 overflow-x-auto pb-2 -mx-5 px-5 scrollbar-hide">
+              {drafts.map((draft) => (
+                <div
+                  key={draft.id}
+                  className="flex-shrink-0 w-40 rounded-xl border border-border bg-card overflow-hidden"
+                >
+                  <div className="relative aspect-video bg-muted">
+                    {draft.videoUrl ? (
+                      <video
+                        src={draft.videoUrl}
+                        className="w-full h-full object-cover"
+                        muted
+                        playsInline
+                        preload="metadata"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <FileVideo className="w-6 h-6 text-muted-foreground" />
+                      </div>
+                    )}
+                    <div className="absolute top-1 right-1 bg-primary/90 text-primary-foreground text-[10px] font-medium px-1.5 py-0.5 rounded">
+                      Draft
+                    </div>
+                  </div>
+                  <div className="p-2">
+                    <p className="text-xs font-medium text-foreground truncate">{draft.title}</p>
+                    <p className="text-[10px] text-muted-foreground">{draft.clipCount} clips</p>
+                    <div className="flex gap-1 mt-1.5">
+                      <button
+                        onClick={() => handlePromoteDraft(draft)}
+                        className="flex-1 text-[10px] font-medium text-primary bg-primary/10 rounded py-1 hover:bg-primary/20 transition-colors"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => handleDeleteDraft(draft.id)}
+                        className="p-1 text-destructive hover:bg-destructive/10 rounded transition-colors"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Clips Grid */}
+        <div className="px-5 py-6 pb-48">
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : clips.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-muted-foreground">No clips found with these filters</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-3">
+              {clips.map((clip) => (
+                <SelectableClipThumbnail
+                  key={clip.id}
+                  clip={clip}
+                  selected={selectedIds.has(clip.id)}
+                  onToggle={() => toggleSelection(clip.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </MobileLayout>
+
+      {/* Duration counter & compile button */}
+      <DurationCounter
+        selectedCount={selectedClips.length}
+        totalDuration={totalDuration}
+        onCompile={handleCompile}
+        isCompiling={isCompiling}
+      />
+
+      {/* Cloud compilation progress overlay */}
+      <CloudCompilationProgress
+        progress={cloudProgress}
+        onDismiss={() => {
+          cloudReset();
+        }}
+      />
+
+      {/* Result sheet */}
+      <CompilationResultSheet
+        open={showResult}
+        onClose={handleCloseResult}
+        videoUrl={cloudResultUrl}
+        videoBlob={null}
+        onSaveToApp={handleSaveToApp}
+        isSaving={isSaving}
+        isSaved={isSaved}
+      />
+
+      <BottomNav />
+    </>
+  );
+};
+
+export default Compile;
