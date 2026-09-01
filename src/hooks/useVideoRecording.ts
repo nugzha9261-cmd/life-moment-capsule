@@ -81,16 +81,18 @@ export const useVideoRecording = ({
     }
 
     try {
-      // This triggers the native iOS permission popup
+      // Request the camera permission. The microphone permission is requested
+      // natively at app launch in MainActivity.java (the Camera plugin doesn't
+      // expose it), so a denied mic would surface here as a getUserMedia error.
       const permission = await Camera.requestPermissions({ permissions: ['camera'] });
-      
+
       if (permission.camera === 'granted') {
         return true;
       } else if (permission.camera === 'denied') {
-        setError('Camera permission denied. Please enable camera access in Settings > Journey Clips > Camera.');
+        setError('Camera/microphone access denied. Please enable BOTH Camera and Microphone for REELIVE in your device Settings > Apps > REELIVE > Permissions.');
         return false;
       } else {
-        // prompt - will show the native popup
+        // prompt / prompt-with-rationale — let getUserMedia surface the prompt
         return true;
       }
     } catch (err) {
