@@ -81,19 +81,14 @@ export const useVideoRecording = ({
     }
 
     try {
-      // Check current state first — avoids re-prompting when already granted
-      const current = await Camera.checkPermissions();
-      if (current.camera === 'granted' && current.microphone === 'granted') {
-        return true;
-      }
+      // Request the camera permission. The microphone permission is requested
+      // natively at app launch in MainActivity.java (the Camera plugin doesn't
+      // expose it), so a denied mic would surface here as a getUserMedia error.
+      const permission = await Camera.requestPermissions({ permissions: ['camera'] });
 
-      // Request BOTH camera and microphone — recording needs both, and a
-      // denied mic makes getUserMedia fail with a misleading camera error.
-      const permission = await Camera.requestPermissions({ permissions: ['camera', 'microphone'] });
-
-      if (permission.camera === 'granted' && permission.microphone === 'granted') {
+      if (permission.camera === 'granted') {
         return true;
-      } else if (permission.camera === 'denied' || permission.microphone === 'denied') {
+      } else if (permission.camera === 'denied') {
         setError('Camera/microphone access denied. Please enable BOTH Camera and Microphone for REELIVE in your device Settings > Apps > REELIVE > Permissions.');
         return false;
       } else {
