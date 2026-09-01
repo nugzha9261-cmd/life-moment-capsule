@@ -81,16 +81,23 @@ export const useVideoRecording = ({
     }
 
     try {
-      // This triggers the native iOS permission popup
-      const permission = await Camera.requestPermissions({ permissions: ['camera'] });
-      
-      if (permission.camera === 'granted') {
+      // Check current state first — avoids re-prompting when already granted
+      const current = await Camera.checkPermissions();
+      if (current.camera === 'granted' && current.microphone === 'granted') {
         return true;
-      } else if (permission.camera === 'denied') {
-        setError('Camera permission denied. Please enable camera access in Settings > Journey Clips > Camera.');
+      }
+
+      // Request BOTH camera and microphone — recording needs both, and a
+      // denied mic makes getUserMedia fail with a misleading camera error.
+      const permission = await Camera.requestPermissions({ permissions: ['camera', 'microphone'] });
+
+      if (permission.camera === 'granted' && permission.microphone === 'granted') {
+        return true;
+      } else if (permission.camera === 'denied' || permission.microphone === 'denied') {
+        setError('Camera/microphone access denied. Please enable BOTH Camera and Microphone for REELIVE in your device Settings > Apps > REELIVE > Permissions.');
         return false;
       } else {
-        // prompt - will show the native popup
+        // prompt / prompt-with-rationale — let getUserMedia surface the prompt
         return true;
       }
     } catch (err) {
