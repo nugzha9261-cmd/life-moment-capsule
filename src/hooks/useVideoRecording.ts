@@ -167,7 +167,7 @@ export const useVideoRecording = ({
       
       // More specific error messages for iOS
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setError('Camera access denied. Please enable camera in Settings > Journey Clips > Camera.');
+        setError('Camera/microphone access denied. Please enable BOTH Camera and Microphone for REELIVE in your device Settings > Apps > REELIVE > Permissions.');
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
         setError('No camera found on this device.');
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
