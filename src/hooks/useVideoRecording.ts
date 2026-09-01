@@ -165,7 +165,14 @@ export const useVideoRecording = ({
       setCameraReady(true);
       return mediaStream;
     } catch (err: any) {
-      console.error('Camera access error:', err);
+      const errorName = typeof err?.name === 'string' ? err.name : 'UnknownError';
+      const errorMessage = typeof err?.message === 'string' ? err.message : String(err);
+      console.error('[initCamera] Camera access error:', {
+        name: errorName,
+        message: errorMessage,
+        native: isNativeApp(),
+        hasMediaDevices: Boolean(navigator.mediaDevices),
+      });
       
       // More specific error messages for iOS
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
@@ -174,8 +181,10 @@ export const useVideoRecording = ({
         setError('No camera found on this device.');
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
         setError('Camera is in use by another app. Please close other apps using the camera.');
+      } else if (err.name === 'OverconstrainedError') {
+        setError('This camera does not support the requested recording mode. Try switching cameras.');
       } else {
-        setError('Unable to access camera. Please check permissions in Settings.');
+        setError(`Unable to open camera (${errorName}). Close other camera apps, restart REELIVE, and try again.`);
       }
       
       setCameraReady(false);
