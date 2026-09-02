@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">REELIVE</string>
-    <string name="title_activity_main">REELIVE</string>
+    <string name="app_name">Reelive</string>
+    <string name="title_activity_main">Reelive</string>
     <string name="package_name">com.nexzonelabs.reelive</string>
     <string name="custom_url_scheme">com.nexzonelabs.reelive</string>
 </resources>

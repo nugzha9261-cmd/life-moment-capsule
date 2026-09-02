@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.nexzonelabs.reelive',
-  appName: 'REELIVE',
+  appName: 'Reelive',
   webDir: 'dist',
   ios: {
     // iOS-specific settings for camera access
