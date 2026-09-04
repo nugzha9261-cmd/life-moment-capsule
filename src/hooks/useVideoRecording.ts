@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-import { Camera } from '@capacitor/camera';
 
 interface UseVideoRecordingProps {
   journeyId: string | null;
@@ -73,35 +72,6 @@ export const useVideoRecording = ({
   // Derive: only "recorded" when we actually have a blob ready.
   const hasRecorded = recordedBlob !== null;
 
-  // Request camera permissions using Capacitor (triggers native iOS popup)
-  const requestCameraPermission = useCallback(async (): Promise<boolean> => {
-    if (!isNativeApp()) {
-      // In browser, permissions are handled by getUserMedia
-      return true;
-    }
-
-    try {
-      // Request the camera permission. The microphone permission is requested
-      // natively at app launch in MainActivity.java (the Camera plugin doesn't
-      // expose it), so a denied mic would surface here as a getUserMedia error.
-      const permission = await Camera.requestPermissions({ permissions: ['camera'] });
-
-      if (permission.camera === 'granted') {
-        return true;
-      } else if (permission.camera === 'denied') {
-        setError('Camera/microphone access denied. Please enable BOTH Camera and Microphone for REELIVE in your device Settings > Apps > REELIVE > Permissions.');
-        return false;
-      } else {
-        // prompt / prompt-with-rationale — let getUserMedia surface the prompt
-        return true;
-      }
-    } catch (err) {
-      console.error('Permission request error:', err);
-      // Fall back to web API
-      return true;
-    }
-  }, []);
-
   // Initialize camera with iOS-compatible constraints
   const initCamera = useCallback(async (facingMode?: 'environment' | 'user') => {
     try {
@@ -117,17 +87,6 @@ export const useVideoRecording = ({
         streamRef.current = null;
         setStream(null);
         setCameraReady(false);
-      }
-      
-      // Only request Capacitor permission on first camera init (not when flipping).
-      // Calling async permission APIs breaks the user-gesture chain on iOS,
-      // which causes getUserMedia to fail for the back camera.
-      if (!facingMode) {
-        const hasPermission = await requestCameraPermission();
-        if (!hasPermission) {
-          setCameraReady(false);
-          return null;
-        }
       }
       
       // Always try { exact } first to force the requested camera.
@@ -170,19 +129,22 @@ export const useVideoRecording = ({
       console.error('[initCamera] Camera access error:', {
         name: errorName,
         message: errorMessage,
+        constraint: typeof err?.constraint === 'string' ? err.constraint : undefined,
         native: isNativeApp(),
+        origin: typeof window !== 'undefined' ? window.location.origin : undefined,
+        secureContext: typeof window !== 'undefined' ? window.isSecureContext : undefined,
         hasMediaDevices: Boolean(navigator.mediaDevices),
       });
       
-      // More specific error messages for iOS
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setError('Camera/microphone access denied. Please enable BOTH Camera and Microphone for REELIVE in your device Settings > Apps > REELIVE > Permissions.');
+        setError('Camera or microphone permission was denied. Enable both for Reelive in Settings > Apps > Reelive > Permissions, then tap Try Again.');
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        setError('No camera found on this device.');
+        setError('A camera or microphone could not be found on this device.');
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        setError('Camera is in use by another app. Please close other apps using the camera.');
+        setError('The camera or microphone is in use by another app. Close other recording apps and try again.');
       } else if (err.name === 'OverconstrainedError') {
-        setError('This camera does not support the requested recording mode. Try switching cameras.');
+        const constraint = typeof err?.constraint === 'string' ? ` (${err.constraint})` : '';
+        setError(`This device does not support the requested recording mode${constraint}. Try switching cameras.`);
       } else {
         setError(`Unable to open camera (${errorName}). Close other camera apps, restart REELIVE, and try again.`);
       }
@@ -190,7 +152,7 @@ export const useVideoRecording = ({
       setCameraReady(false);
       return null;
     }
-  }, [requestCameraPermission]);
+  }, []);
 
   // Stop camera — use ref so this callback never has a stale stream
   const stopCamera = useCallback(() => {
