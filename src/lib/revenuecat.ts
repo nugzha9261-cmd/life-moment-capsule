@@ -5,7 +5,19 @@ import { AppLauncher } from '@capacitor/app-launcher';
 
 
 
-const REVENUECAT_PUBLIC_KEY = import.meta.env.VITE_REVENUECAT_PUBLIC_KEY as string | undefined;
+const APPLE_PUBLIC_KEY = import.meta.env.VITE_REVENUECAT_PUBLIC_KEY as string | undefined;
+const ANDROID_PUBLIC_KEY = import.meta.env.VITE_REVENUECAT_ANDROID_KEY as string | undefined;
+
+/**
+ * RevenueCat issues a different public SDK key per store.
+ * Apple keys start with `appl_`, Google Play keys with `goog_`.
+ */
+function getPlatformKey(): string | undefined {
+  const platform = Capacitor.getPlatform();
+  if (platform === 'android') return ANDROID_PUBLIC_KEY;
+  if (platform === 'ios') return APPLE_PUBLIC_KEY;
+  return undefined;
+}
 
 export type PlanType = 'monthly' | 'yearly' | 'lifetime';
 
@@ -38,8 +50,12 @@ export async function configurePurchases(userId: string | null): Promise<boolean
 
   if (!configurePromise) {
     configurePromise = (async () => {
-      if (!REVENUECAT_PUBLIC_KEY) {
-        console.warn('VITE_REVENUECAT_PUBLIC_KEY is not set. RevenueCat purchases will be disabled.');
+      const apiKey = getPlatformKey();
+      if (!apiKey) {
+        console.warn(
+          `RevenueCat public key missing for platform "${Capacitor.getPlatform()}". ` +
+            'Set VITE_REVENUECAT_ANDROID_KEY (goog_...) for Android or VITE_REVENUECAT_PUBLIC_KEY (appl_...) for iOS. Purchases disabled.'
+        );
         return false;
       }
 
@@ -48,7 +64,7 @@ export async function configurePurchases(userId: string | null): Promise<boolean
         const nativeState = await Purchases.isConfigured();
         if (!nativeState.isConfigured) {
           await Purchases.configure({
-            apiKey: REVENUECAT_PUBLIC_KEY,
+            apiKey,
             appUserID: userId ?? undefined,
           });
         }
